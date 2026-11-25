@@ -490,13 +490,15 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
   }
   try{
     if(typeof firebase==="undefined"){
-      await loadScript("https://gstatic.com");
-      await loadScript("https://gstatic.com");
-      await loadScript("https://gstatic.com");
+      var host = "www" + ".gstatic.com";
+      var base = "https://" + host + "/firebasejs/10.12.2/";
+      await loadScript(base+"firebase-app-compat.js");
+      await loadScript(base+"firebase-auth-compat.js");
+      await loadScript(base+"firebase-firestore-compat.js");
     }
     var firebaseConfig = {
       apiKey: "AIzaSyAlqOIwa0CWC4qVYS0AfeVHoUqfgntPwys",
-      authDomain: "inoue-lab-board.firebaseapp.com",
+      authDomain: "://firebaseapp.com",
       projectId: "inoue-lab-board",
       storageBucket: "inoue-lab-board.firebasestorage.app",
       messagingSenderId: "768332084739",
@@ -512,7 +514,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     col.onSnapshot(function(snap){
       clearTimeout(timer);
       items=snap.docs.map(function(d){var v=d.data()||{};v.id=d.id;return v});
-      var me=items.filter(function(x){return x.id===myId})[0];
+      var me=items.filter(function(x){return x.id===myId});
       if(me&&!$("name").value&&me.name){$("name").value=me.name;try{localStorage.setItem("labname",me.name)}catch(e){}showName()}
       render();renderCal();renderDay();renderStats();fixInfo();checkAuto();
     },function(err){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】データの購読に失敗: "+((err&&err.message)||err)});
