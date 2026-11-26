@@ -533,54 +533,90 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     secEl.appendChild(card);
   });
 
-  function addTrashButtonsToList() {
-    var listEl = $("list");
-    if (!listEl) return;
-    var rows = listEl.querySelectorAll(".person");
-    rows.forEach(function(row) {
-      if (row.querySelector(".trash-btn")) return;
-      var nmEl = row.querySelector(".nm");
-      if (!nmEl) return;
-      var rawName = nmEl.firstChild ? nmEl.firstChild.textContent : "";
-      var target = items.filter(function(x) { return x.name === rawName; })[0];
-      if (!target) return;
-
-      var btn = document.createElement("button");
-      btn.className = "b-sub trash-btn";
-      btn.style.cssText = "margin-left:auto;padding:5px 9px;font-size:11px;flex:0 0 auto";
-      btn.textContent = "ごみ箱へ";
-      var armed = false;
-      btn.onclick = function() {
-        if (!armed) {
-          armed = true;
-          btn.textContent = "本当に移動?";
-          btn.style.background = "var(--ng)";
-          btn.style.color = "#fff";
-          setTimeout(function() {
-            armed = false;
-            btn.textContent = "ごみ箱へ";
-            btn.style.background = "";
-            btn.style.color = "";
-          }, 3000);
-          return;
-        }
-        if (!col) return;
-        col.doc(target.id).set({
-          name: target.name || "",
-          status: "out",
-          time: target.time || "",
-          note: target.note || "",
-          date: target.date || "",
-          updatedAt: Date.now(),
-          plans: target.plans || {},
-          log: target.log || {},
-          deletedAt: Date.now()
-        }).then(function() {
-          $("msg").textContent = "「" + target.name + "」をごみ箱へ移動しました";
-        });
-      };
-      row.appendChild(btn);
+  function moveToTrash(target) {
+    if (!col || !target) return;
+    /* 同じ名前のドキュメントが複数残っていた場合もまとめてごみ箱へ送る */
+    var sameNames = allDocs.filter(function(d) {
+      return !d.deletedAt && normName(d.name) === normName(target.name);
     });
+    if (!sameNames.length) sameNames = [target];
+    sameNames.forEach(function(docItem) {
+      col.doc(docItem.id).set({
+        name: docItem.name || "",
+        status: "out",
+        time: docItem.time || "",
+        note: docItem.note || "",
+        date: docItem.date || "",
+        updatedAt: Date.now(),
+        plans: docItem.plans || {},
+        log: docItem.log || {},
+        deletedAt: Date.now()
+      });
+    });
+    $("msg").textContent = "「" + target.name + "」をごみ箱へ移動しました";
+  }
+
+  function makeTrashBtn(target) {
+    var btn = document.createElement("button");
+    btn.className = "b-sub trash-btn";
+    btn.style.cssText = "margin-left:6px;padding:3px 7px;font-size:10px;flex:0 0 auto;border-bottom-width:2px";
+    btn.textContent = "ごみ箱へ";
+    var armed = false;
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      if (!armed) {
+        armed = true;
+        btn.textContent = "確認";
+        btn.style.background = "var(--ng)";
+        btn.style.color = "#fff";
+        setTimeout(function() {
+          armed = false;
+          btn.textContent = "ごみ箱へ";
+          btn.style.background = "";
+          btn.style.color = "";
+        }, 3000);
+        return;
+      }
+      moveToTrash(target);
+    };
+    return btn;
+  }
+
+  function addTrashButtonsEverywhere() {
+    /* ① 「今日のみんな」の行にボタンを追加 */
+    var listEl = $("list");
+    if (listEl) {
+      listEl.querySelectorAll(".person").forEach(function(row) {
+        if (row.querySelector(".trash-btn")) return;
+        var nmEl = row.querySelector(".nm");
+        if (!nmEl) return;
+        var rawName = nmEl.firstChild ? nmEl.firstChild.textContent : "";
+        var target = items.filter(function(x) { return x.name === rawName; })[0];
+        if (target) {
+          var btn = makeTrashBtn(target);
+          btn.style.marginLeft = "auto";
+          row.appendChild(btn);
+        }
+      });
+    }
+
+    /* ② 「累積在室時間」の行にもボタンを追加（今日いない人も消せるようにする） */
+    var cumEl = $("cum");
+    if (cumEl) {
+      cumEl.querySelectorAll(".sr:not(.h)").forEach(function(row) {
+        if (row.querySelector(".trash-btn")) return;
+        var nameCell = row.children[0];
+        if (!nameCell) return;
+        var rawName = nameCell.textContent.trim();
+        var target = items.filter(function(x) { return x.name === rawName; })[0];
+        if (target) {
+          nameCell.style.display = "flex";
+          nameCell.style.alignItems = "center";
+          nameCell.style.flexWrap = "wrap";
+          nameCell.appendChild(makeTrashBtn(target));
+        }
+      });
+    }
   }
 
   function renderTrash() {
@@ -712,9 +748,9 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
       var me = items.filter(function(x){return x.id===myId})[0];
       if(me&&!$("name").value&&me.name){$("name").value=me.name;try{localStorage.setItem("labname",me.name)}catch(e){}showName()}
       render();
-      addTrashButtonsToList();
-      renderTrash();
       renderCal();renderDay();renderStats();fixInfo();checkAuto();
+      addTrashButtonsEverywhere();
+      renderTrash();
     },function(err){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】データの購読に失敗: "+((err&&err.message)||err)});
   }catch(e){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】"+((e&&e.message)||e)}
 })();
@@ -723,4 +759,3 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
 </body>
 </html>
 
-</html>
