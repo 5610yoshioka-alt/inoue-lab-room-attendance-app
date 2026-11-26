@@ -478,6 +478,43 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
   try{navigator.clipboard.writeText(csv).then(function(){ta.style.display="none";$("msg").textContent="CSVをコピーしました。Excelなどに貼り付けてください"},manual)}catch(e){manual()}};
 
 (async function(){
+  /* 1. PWA(インストール機能)の自動セットアップ */
+  try {
+    var iconHref = document.querySelector('link[rel="icon"]').href;
+    var manifest = {
+      name: "井上研究室 在室ボード",
+      short_name: "在室ボード",
+      start_url: location.href.split('?')[0],
+      display: "standalone",
+      background_color: "#e4e0d3",
+      theme_color: "#5a7d63",
+      icons: [{ src: iconHref, sizes: "180x180", type: "image/png" }]
+    };
+    var blob = new Blob([JSON.stringify(manifest)], {type: "application/json"});
+    var link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = URL.createObjectURL(blob);
+    document.head.appendChild(link);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(function(){});
+    }
+  } catch(e) {}
+
+  /* 2. 名前ベースでのID統一（複数端末での重複防止） */
+  function normName(n) {
+    return String(n || "").replace(/[\s\u3000]+/g, "");
+  }
+  function syncMyIdFromName() {
+    var n = normName($("name").value);
+    if (n) myId = "user_" + n;
+  }
+  $("name").addEventListener("input", syncMyIdFromName);
+  ["bIn", "bOut", "pAdd", "pDel", "rAdd", "rDel", "fSave", "fDel"].forEach(function(id) {
+    var el = $(id);
+    if (el) el.addEventListener("click", syncMyIdFromName, true);
+  });
+
+  /* 3. Firebase 接続とデータ同期 */
   var timer=setTimeout(function(){if($("heroBig").textContent==="読み込み中…"){$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】10秒以内に応答がありません(Firebase設定を確認してください)"}},10000);
   function loadScript(src){
     return new Promise(function(resolve,reject){
@@ -498,7 +535,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     }
     var firebaseConfig = {
       apiKey: "AIzaSyCsf8RwTok6OyCv8H_-Fw_tOH52gGkSWQA",
-      authDomain: "inoue-lab-board-2b3c7.firebaseapp.com",
+      authDomain: "://firebaseapp.com",
       projectId: "inoue-lab-board-2b3c7",
       storageBucket: "inoue-lab-board-2b3c7.firebasestorage.app",
       messagingSenderId: "74038428293",
@@ -510,11 +547,22 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     var db = firebase.firestore();
     var cred = await auth.signInAnonymously();
     myId = cred.user.uid;
+    syncMyIdFromName();
     col = db.collection("members");
     col.onSnapshot(function(snap){
       clearTimeout(timer);
-      items=snap.docs.map(function(d){var v=d.data()||{};v.id=d.id;return v});
-      var me=items.filter(function(x){return x.id===myId});
+      syncMyIdFromName();
+      var raw = snap.docs.map(function(d){var v=d.data()||{};v.id=d.id;return v});
+      /* 同じ名前の古い重複データがある場合は最新1件にまとめて表示 */
+      var byName = {};
+      raw.forEach(function(v){
+        var k = normName(v.name) || v.id;
+        if (!byName[k] || (v.updatedAt || 0) >= (byName[k].updatedAt || 0)) {
+          byName[k] = v;
+        }
+      });
+      items = Object.keys(byName).map(function(k){ return byName[k]; });
+      var me = items.filter(function(x){return x.id===myId})[0];
       if(me&&!$("name").value&&me.name){$("name").value=me.name;try{localStorage.setItem("labname",me.name)}catch(e){}showName()}
       render();renderCal();renderDay();renderStats();fixInfo();checkAuto();
     },function(err){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】データの購読に失敗: "+((err&&err.message)||err)});
