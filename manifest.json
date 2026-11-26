@@ -1,0 +1,15 @@
+{
+  "name": "井上研究室 在室ボード",
+  "short_name": "在室ボード",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#e4e0d3",
+  "theme_color": "#5a7d63",
+  "icons": [
+    {
+      "src": "./icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
