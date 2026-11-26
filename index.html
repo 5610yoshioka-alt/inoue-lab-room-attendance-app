@@ -484,7 +484,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     var manifest = {
       name: "井上研究室 在室ボード",
       short_name: "在室ボード",
-      start_url: location.href.split('?')[0],
+      start_url: location.href.split('?'),
       display: "standalone",
       background_color: "#e4e0d3",
       theme_color: "#5a7d63",
@@ -514,7 +514,139 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     if (el) el.addEventListener("click", syncMyIdFromName, true);
   });
 
-  /* 3. Firebase 接続とデータ同期 */
+  /* 3. ごみ箱UIと機能（180日で自動削除・復活対応） */
+  var TRASH_DAYS = 180;
+  var TRASH_MS = TRASH_DAYS * 24 * 60 * 60 * 1000;
+  var allDocs = [];
+
+  var trashCard = document.createElement("div");
+  trashCard.className = "card";
+  trashCard.innerHTML = '<h2>ごみ箱(誤登録の退避・約半年後に自動削除)</h2><div id="trashList"><div class="empty">ごみ箱は空です</div></div>';
+  $("t-now").appendChild(trashCard);
+
+  function addTrashButtonsToList() {
+    var listEl = $("list");
+    if (!listEl) return;
+    var rows = listEl.querySelectorAll(".person");
+    rows.forEach(function(row) {
+      if (row.querySelector(".trash-btn")) return;
+      var nmEl = row.querySelector(".nm");
+      if (!nmEl) return;
+      var rawName = nmEl.firstChild ? nmEl.firstChild.textContent : "";
+      var target = items.filter(function(x) { return x.name === rawName; });
+      if (!target) return;
+
+      var btn = document.createElement("button");
+      btn.className = "b-sub trash-btn";
+      btn.style.cssText = "margin-left:auto;padding:5px 9px;font-size:11px;flex:0 0 auto";
+      btn.textContent = "ごみ箱へ";
+      var armed = false;
+      btn.onclick = function() {
+        if (!armed) {
+          armed = true;
+          btn.textContent = "本当に移動?";
+          btn.style.background = "var(--ng)";
+          btn.style.color = "#fff";
+          setTimeout(function() {
+            armed = false;
+            btn.textContent = "ごみ箱へ";
+            btn.style.background = "";
+            btn.style.color = "";
+          }, 3000);
+          return;
+        }
+        if (!col) return;
+        col.doc(target.id).set({
+          name: target.name || "",
+          status: "out",
+          time: target.time || "",
+          note: target.note || "",
+          date: target.date || "",
+          updatedAt: Date.now(),
+          plans: target.plans || {},
+          log: target.log || {},
+          deletedAt: Date.now()
+        }).then(function() {
+          $("msg").textContent = "「" + target.name + "」をごみ箱へ移動しました";
+        });
+      };
+      row.appendChild(btn);
+    });
+  }
+
+  function renderTrash() {
+    var box = $("trashList");
+    if (!box) return;
+    var now = Date.now();
+    var trashed = [];
+
+    allDocs.forEach(function(d) {
+      if (d.deletedAt) {
+        if (now - d.deletedAt >= TRASH_MS) {
+          if (col) col.doc(d.id).delete().catch(function(){});
+        } else {
+          trashed.push(d);
+        }
+      }
+    });
+
+    box.textContent = "";
+    if (!trashed.length) {
+      var emp = document.createElement("div");
+      emp.className = "empty";
+      emp.textContent = "ごみ箱は空です";
+      box.appendChild(emp);
+      return;
+    }
+
+    trashed.sort(function(a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
+    trashed.forEach(function(d) {
+      var remDays = Math.max(1, Math.ceil((TRASH_MS - (now - d.deletedAt)) / (24 * 60 * 60 * 1000)));
+      var dt = new Date(d.deletedAt);
+      var dateStr = (dt.getMonth() + 1) + "/" + dt.getDate() + " 削除";
+
+      var row = document.createElement("div");
+      row.className = "person";
+
+      var info = document.createElement("div");
+      info.style.flex = "1";
+      var nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = d.name || "(名前なし)";
+      var st = document.createElement("div");
+      st.className = "st";
+      st.textContent = dateStr + " ・ あと約" + remDays + "日で自動消去";
+      info.appendChild(nm);
+      info.appendChild(st);
+
+      var btnRes = document.createElement("button");
+      btnRes.className = "b-in";
+      btnRes.style.cssText = "padding:6px 10px;font-size:12px;flex:0 0 auto";
+      btnRes.textContent = "復活";
+      btnRes.onclick = function() {
+        if (!col) return;
+        col.doc(d.id).set({
+          name: d.name || "",
+          status: "out",
+          time: "",
+          note: "",
+          date: today(),
+          updatedAt: Date.now(),
+          plans: d.plans || {},
+          log: d.log || {},
+          deletedAt: null
+        }).then(function() {
+          $("msg").textContent = "「" + d.name + "」を復活させました";
+        });
+      };
+
+      row.appendChild(info);
+      row.appendChild(btnRes);
+      box.appendChild(row);
+    });
+  }
+
+  /* 4. Firebase 接続とデータ同期 */
   var timer=setTimeout(function(){if($("heroBig").textContent==="読み込み中…"){$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】10秒以内に応答がありません(Firebase設定を確認してください)"}},10000);
   function loadScript(src){
     return new Promise(function(resolve,reject){
@@ -552,19 +684,25 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     col.onSnapshot(function(snap){
       clearTimeout(timer);
       syncMyIdFromName();
-      var raw = snap.docs.map(function(d){var v=d.data()||{};v.id=d.id;return v});
-      /* 同じ名前の古い重複データがある場合は最新1件にまとめて表示 */
+      allDocs = snap.docs.map(function(d){var v=d.data()||{};v.id=d.id;return v});
+
+      /* ごみ箱に入っていない有効データのみを重複統合して表示 */
+      var activeDocs = allDocs.filter(function(v){ return !v.deletedAt; });
       var byName = {};
-      raw.forEach(function(v){
+      activeDocs.forEach(function(v){
         var k = normName(v.name) || v.id;
         if (!byName[k] || (v.updatedAt || 0) >= (byName[k].updatedAt || 0)) {
           byName[k] = v;
         }
       });
       items = Object.keys(byName).map(function(k){ return byName[k]; });
-      var me = items.filter(function(x){return x.id===myId})[0];
+
+      var me = items.filter(function(x){return x.id===myId});
       if(me&&!$("name").value&&me.name){$("name").value=me.name;try{localStorage.setItem("labname",me.name)}catch(e){}showName()}
-      render();renderCal();renderDay();renderStats();fixInfo();checkAuto();
+      render();
+      addTrashButtonsToList();
+      renderTrash();
+      renderCal();renderDay();renderStats();fixInfo();checkAuto();
     },function(err){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】データの購読に失敗: "+((err&&err.message)||err)});
   }catch(e){clearTimeout(timer);$("heroBig").textContent="読み込めませんでした";$("msg").textContent="【原因】"+((e&&e.message)||e)}
 })();
