@@ -484,7 +484,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     var manifest = {
       name: "井上研究室 在室ボード",
       short_name: "在室ボード",
-      start_url: location.href.split('?'),
+      start_url: location.href.split('?')[0],
       display: "standalone",
       background_color: "#e4e0d3",
       theme_color: "#5a7d63",
@@ -514,15 +514,24 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
     if (el) el.addEventListener("click", syncMyIdFromName, true);
   });
 
-  /* 3. ごみ箱UIと機能（180日で自動削除・復活対応） */
+  /* 3. ごみ箱UIと機能（在室・予定・集計の3タブすべてに設置） */
   var TRASH_DAYS = 180;
   var TRASH_MS = TRASH_DAYS * 24 * 60 * 60 * 1000;
   var allDocs = [];
+  var trashBoxIds = ["trashList-now", "trashList-plan", "trashList-stat"];
 
-  var trashCard = document.createElement("div");
-  trashCard.className = "card";
-  trashCard.innerHTML = '<h2>ごみ箱(誤登録の退避・約半年後に自動削除)</h2><div id="trashList"><div class="empty">ごみ箱は空です</div></div>';
-  $("t-now").appendChild(trashCard);
+  [
+    { sec: "t-now", listId: "trashList-now" },
+    { sec: "t-plan", listId: "trashList-plan" },
+    { sec: "t-stat", listId: "trashList-stat" }
+  ].forEach(function(cfg) {
+    var secEl = $(cfg.sec);
+    if (!secEl) return;
+    var card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = '<h2>ごみ箱(誤登録の退避・約半年後に自動削除)</h2><div id="' + cfg.listId + '"><div class="empty">ごみ箱は空です</div></div>';
+    secEl.appendChild(card);
+  });
 
   function addTrashButtonsToList() {
     var listEl = $("list");
@@ -533,7 +542,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
       var nmEl = row.querySelector(".nm");
       if (!nmEl) return;
       var rawName = nmEl.firstChild ? nmEl.firstChild.textContent : "";
-      var target = items.filter(function(x) { return x.name === rawName; });
+      var target = items.filter(function(x) { return x.name === rawName; })[0];
       if (!target) return;
 
       var btn = document.createElement("button");
@@ -575,8 +584,6 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
   }
 
   function renderTrash() {
-    var box = $("trashList");
-    if (!box) return;
     var now = Date.now();
     var trashed = [];
 
@@ -590,59 +597,64 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
       }
     });
 
-    box.textContent = "";
-    if (!trashed.length) {
-      var emp = document.createElement("div");
-      emp.className = "empty";
-      emp.textContent = "ごみ箱は空です";
-      box.appendChild(emp);
-      return;
-    }
-
     trashed.sort(function(a, b) { return (b.deletedAt || 0) - (a.deletedAt || 0); });
-    trashed.forEach(function(d) {
-      var remDays = Math.max(1, Math.ceil((TRASH_MS - (now - d.deletedAt)) / (24 * 60 * 60 * 1000)));
-      var dt = new Date(d.deletedAt);
-      var dateStr = (dt.getMonth() + 1) + "/" + dt.getDate() + " 削除";
 
-      var row = document.createElement("div");
-      row.className = "person";
+    trashBoxIds.forEach(function(boxId) {
+      var box = $(boxId);
+      if (!box) return;
+      box.textContent = "";
+      if (!trashed.length) {
+        var emp = document.createElement("div");
+        emp.className = "empty";
+        emp.textContent = "ごみ箱は空です";
+        box.appendChild(emp);
+        return;
+      }
 
-      var info = document.createElement("div");
-      info.style.flex = "1";
-      var nm = document.createElement("div");
-      nm.className = "nm";
-      nm.textContent = d.name || "(名前なし)";
-      var st = document.createElement("div");
-      st.className = "st";
-      st.textContent = dateStr + " ・ あと約" + remDays + "日で自動消去";
-      info.appendChild(nm);
-      info.appendChild(st);
+      trashed.forEach(function(d) {
+        var remDays = Math.max(1, Math.ceil((TRASH_MS - (now - d.deletedAt)) / (24 * 60 * 60 * 1000)));
+        var dt = new Date(d.deletedAt);
+        var dateStr = (dt.getMonth() + 1) + "/" + dt.getDate() + " 削除";
 
-      var btnRes = document.createElement("button");
-      btnRes.className = "b-in";
-      btnRes.style.cssText = "padding:6px 10px;font-size:12px;flex:0 0 auto";
-      btnRes.textContent = "復活";
-      btnRes.onclick = function() {
-        if (!col) return;
-        col.doc(d.id).set({
-          name: d.name || "",
-          status: "out",
-          time: "",
-          note: "",
-          date: today(),
-          updatedAt: Date.now(),
-          plans: d.plans || {},
-          log: d.log || {},
-          deletedAt: null
-        }).then(function() {
-          $("msg").textContent = "「" + d.name + "」を復活させました";
-        });
-      };
+        var row = document.createElement("div");
+        row.className = "person";
 
-      row.appendChild(info);
-      row.appendChild(btnRes);
-      box.appendChild(row);
+        var info = document.createElement("div");
+        info.style.flex = "1";
+        var nm = document.createElement("div");
+        nm.className = "nm";
+        nm.textContent = d.name || "(名前なし)";
+        var st = document.createElement("div");
+        st.className = "st";
+        st.textContent = dateStr + " ・ あと約" + remDays + "日で自動消去";
+        info.appendChild(nm);
+        info.appendChild(st);
+
+        var btnRes = document.createElement("button");
+        btnRes.className = "b-in";
+        btnRes.style.cssText = "padding:6px 10px;font-size:12px;flex:0 0 auto";
+        btnRes.textContent = "復活";
+        btnRes.onclick = function() {
+          if (!col) return;
+          col.doc(d.id).set({
+            name: d.name || "",
+            status: "out",
+            time: "",
+            note: "",
+            date: today(),
+            updatedAt: Date.now(),
+            plans: d.plans || {},
+            log: d.log || {},
+            deletedAt: null
+          }).then(function() {
+            $("msg").textContent = "「" + d.name + "」を復活させました";
+          });
+        };
+
+        row.appendChild(info);
+        row.appendChild(btnRes);
+        box.appendChild(row);
+      });
     });
   }
 
@@ -697,7 +709,7 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
       });
       items = Object.keys(byName).map(function(k){ return byName[k]; });
 
-      var me = items.filter(function(x){return x.id===myId});
+      var me = items.filter(function(x){return x.id===myId})[0];
       if(me&&!$("name").value&&me.name){$("name").value=me.name;try{localStorage.setItem("labname",me.name)}catch(e){}showName()}
       render();
       addTrashButtonsToList();
@@ -709,4 +721,6 @@ $("csvCopy").onclick=function(){var csv=buildCsv($("csvScope").value),ta=$("csvT
 })();
 </script>
 </body>
+</html>
+
 </html>
